@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<base target="_self">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07080a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Porra 2026">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Porra Mundial 2026</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; display: flex; align-items: center;
+justify-content: center; background: #07080a; font-family: Arial, sans-serif;
+padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.card { background: #0f1114; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+padding: 40px 32px; width: 100%; max-width: 380px; text-align: center; margin: 16px; }
+.trophy { width: 64px; height: 64px; margin: 0 auto 16px; }
+h1 { font-size: 26px; color: #fff; margin-bottom: 4px; }
+.sub { color: #555; font-size: 14px; margin-bottom: 32px; }
+input { width: 100%; padding: 12px 16px; background: #161a1f; border: 1px solid rgba(255,255,255,0.1);
+border-radius: 8px; color: #fff; font-size: 15px; margin-bottom: 12px;
+outline: none; }
+input:focus { border-color: #f5c842; }
+button { width: 100%; padding: 13px; background: #f5c842; color: #07080a; border: none;
+border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+button:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
+.msg { margin-top: 14px; font-size: 13px; min-height: 18px; }
+.msg.ok { color: #34d399; }
+.msg.err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="card">
+<img class="trophy" src="icons/icon-192.png" alt="Porra 2026">
+<h1>Porra Mundial</h1>
+<p class="sub">2026</p>
+<input id="email" type="email" placeholder="tu@email.com" autocomplete="email">
+<button id="btn" onclick="login()">Entrar</button>
+<div id="msg" class="msg"></div>
+</div>
+
+<script>
+// ⚠️ Sustituye por tu URL real de Apps Script (la misma que usabas antes)
+const API = "https://script.google.com/macros/s/AKfycbzj_QmdDzL7FzrxaY4L6FRd4wu2L2we-1g07rSO7SRrqLE4Vdh163BueIgU8zGS7x_2/exec";
+
+// Si ya hay sesion guardada, saltar directo a la app
+window.addEventListener("load", function() {
+  try {
+    const savedToken = localStorage.getItem("porra_token");
+    if (savedToken) {
+      window.location.href = "app.html";
+    }
+  } catch (e) {}
+
+  // Registrar service worker para instalacion PWA
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js").catch(function(){});
+  }
+});
+
+function login() {
+  const email = document.getElementById("email").value.trim();
+  const btn = document.getElementById("btn");
+  const msg = document.getElementById("msg");
+
+  if (!email) {
+    msg.className = "msg err";
+    msg.textContent = "Introduce tu email";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Entrando...";
+  msg.className = "msg";
+  msg.textContent = "";
+
+  fetch(API, {
+    method: "POST",
+    body: JSON.stringify({ route: "login", email: email })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.success) {
+      try {
+        localStorage.setItem("porra_token", res.token);
+        localStorage.setItem("porra_nombre", res.nombre);
+      } catch (e) {}
+      window.location.href = "app.html";
+    } else {
+      msg.className = "msg err";
+      msg.textContent = res.error || "Email no encontrado";
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+    }
+  })
+  .catch(function() {
+    msg.className = "msg err";
+    msg.textContent = "Error de conexion";
+    btn.disabled = false;
+    btn.textContent = "Entrar";
+  });
+}
+
+document.getElementById("email").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") login();
+});
+</script>
+</body>
+</html>
