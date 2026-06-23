@@ -182,9 +182,10 @@ input:disabled{color:var(--muted)}
 <nav>
   <button class="active" onclick="navTo('ranking',this)">Clasificacion</button>
   <button onclick="navTo('resultados',this)">Resultados</button>
-  <button onclick="navTo('partidos',this)">Mis Partidos</button>
-  <button onclick="navTo('fases',this)">Mis Cruces</button>
-  <button onclick="navTo('preguntas',this)">Mis Preguntas</button>
+
+
+
+  <button onclick="navTo('misapuestas',this)">Mis Apuestas</button>
   <button onclick="navTo('apuestas',this)">Apuestas</button>
   <button onclick="navTo('normas',this)">Normas</button>
 </nav>
@@ -211,8 +212,8 @@ function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").
 function api(r,x){var b=Object.assign({route:r,token:token},x||{});return fetch(API,{method:"POST",body:JSON.stringify(b)}).then(function(r){return r.json();});}
 function setContent(h){document.getElementById("content").innerHTML=h;}
 function navTo(s,b){document.querySelectorAll("nav button").forEach(function(x){x.classList.remove("active");});b.classList.add("active");
-  if(s==="ranking")loadRanking();if(s==="resultados")loadResultados();if(s==="partidos")loadPartidos();
-  if(s==="fases")loadFases();if(s==="preguntas")loadPreguntas();if(s==="apuestas")loadApuestas();if(s==="normas")loadNormas();}
+  if(s==="ranking")loadRanking();if(s==="resultados")loadResultados();if(s==="misapuestas")loadMisApuestas();
+  if(s==="apuestas")loadApuestas();if(s==="normas")loadNormas();}
 
 // ── RANKING
 var _rd=[],_rc="puntos",_rdir=-1;
@@ -420,6 +421,133 @@ function setPendTab(tab){
 function setPendCrucesRonda(ronda){
   _pendCrucesRonda = ronda;
   renderRankingCompleto();
+}
+
+// ── MIS APUESTAS (fusión de Partidos, Cruces y Preguntas)
+var _misApTab = "partidos";
+
+function loadMisApuestas(){
+  setContent('<div class="spinner">Cargando</div>');
+  Promise.all([api("getPartidos"), api("getMisFases"), api("getMisApuestas"), api("getPreguntas")]).then(function(res){
+    window._maPartidos = res[0];
+    window._maFasesPrev = res[1] || {};
+    window._maAp = res[2];
+    window._maPreguntas = res[3];
+    renderMisApuestas();
+  }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
+}
+
+function setMisApTab(tab){
+  _misApTab = tab;
+  renderMisApuestas();
+}
+
+function misApTabBtn(tab, label){
+  var activo = _misApTab === tab;
+  return '<button onclick="setMisApTab(\''+tab+'\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(activo?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(activo?"var(--gold)":"transparent")+'">'+label+"</button>";
+}
+
+function renderMisApuestas(){
+  var partidos = window._maPartidos || [];
+  var prev = window._maFasesPrev || {};
+  var ap = window._maAp || {};
+  var preguntas = window._maPreguntas || [];
+
+  var h = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">';
+  h += '<div style="display:flex;border-bottom:1px solid var(--bdr)">';
+  h += misApTabBtn("partidos","Partidos");
+  h += misApTabBtn("cruces","Cruces");
+  h += misApTabBtn("preguntas","Preguntas");
+  h += "</div></div>";
+
+  // ── PARTIDOS ──
+  if(_misApTab === "partidos"){
+    var pm = {};
+    if(ap && ap.partidos) ap.partidos.forEach(function(a){if(a.pronostico)pm[a.id]=a.pronostico;});
+    window._pd = partidos;
+    var fa = "";
+    function cerrar(){if(!fa)return;
+      h+='<button class="btn-ghost" onclick="guardarFase(\''+fa+'\')">Guardar '+fa.replace(/_/g," ")+"</button>";
+      h+='<div class="fb info" id="msg-'+fa+'"></div></div>';}
+    partidos.forEach(function(p){
+      if(!p.fase||p.fase.indexOf("GRUPO_")!==0)return;
+      if(p.fase!==fa){cerrar();fa=p.fase;h+='<div class="fase-hdr">'+esc(p.fase.replace(/_/g," "))+"</div>"+'<div class="card">';}
+      var badge=p.estado==="FINALIZADO"?'<span class="badge fin">Finalizado</span>':'<span class="badge prox">Pendiente</span>';
+      var pA=pm[p.id]?pm[p.id].golesA:"";var pB=pm[p.id]?pm[p.id].golesB:"";
+      h+='<div class="partido"><div class="eq">'+esc(p.equipoA)+"</div>";
+      h+='<div class="p-mid">'+badge;
+      if(p.fecha)h+='<div class="fecha">'+p.fecha+"</div>";
+      h+='<div class="sc-wrap"><input type="number" min="0" max="20" placeholder="0" id="gA-'+p.id+'" value="'+pA+'"><span class="sc-sep">—</span><input type="number" min="0" max="20" placeholder="0" id="gB-'+p.id+'" value="'+pB+'"></div>';
+      if(pA!=="")h+='<div class="saved-ok">guardado</div>';
+      h+="</div>"+'<div class="eq r">'+esc(p.equipoB)+"</div></div>";
+    });
+    cerrar();
+  }
+
+  // ── CRUCES ──
+  if(_misApTab === "cruces"){
+    var grupos={};var todas=[];var ss={};
+    partidos.forEach(function(p){
+      if(p.fase&&p.fase.indexOf("GRUPO_")===0){var g=p.fase.replace("GRUPO_","");if(!grupos[g])grupos[g]={};
+        if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A")grupos[g][p.equipoA]=true;
+        if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B")grupos[g][p.equipoB]=true;}
+      if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A"&&!ss[p.equipoA]){ss[p.equipoA]=true;todas.push(p.equipoA);}
+      if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B"&&!ss[p.equipoB]){ss[p.equipoB]=true;todas.push(p.equipoB);}
+    });
+    todas.sort();
+    function mkSel(id,opts,pv){var s='<select id="fase-'+id+'"><option value="">-- Selecciona --</option>';opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});return s+"</select>";}
+    function fila(lbl,key,opts){return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel(key,opts,prev[key]||"")+"</div></div>";}
+    function sec(tit,bid,cont){return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';}
+    var lets=["A","B","C","D","E","F","G","H","I","J","K","L"];
+    var d16="";lets.forEach(function(l){var eq=Object.keys(grupos[l]||{}).sort();d16+=fila("1 Grupo "+l,"D16_1_"+l,eq)+fila("2 Grupo "+l,"D16_2_"+l,eq);});
+    for(var t=1;t<=8;t++)d16+=fila("3 mejor "+t,"D16_T"+t,todas);
+    var oct="";for(var d=1;d<=16;d++)oct+=fila("Clasificado "+d,"OCT_"+d,todas);
+    var qf="";for(var q=1;q<=8;q++)qf+=fila("Cuartofinalista "+q,"QF_"+q,todas);
+    var sf="";for(var s=1;s<=4;s++)sf+=fila("Semifinalista "+s,"SF_"+s,todas);
+    var fin=fila("Finalista 1","FIN_1",todas)+fila("Finalista 2","FIN_2",todas)+fila("3er clasificado","TERCER",todas);
+    h+=sec("Dieciseisavos — 3 pts","DIECISEISAVOS",d16)+sec("Octavos — 5 pts","OCTAVOS",oct)+sec("Cuartos — 7 pts","CUARTOS",qf)+sec("Semifinales — 9 pts","SEMIFINAL",sf)+sec("Finalistas — 11 pts","FINALISTAS",fin)+sec("Campeon — 16 pts","CAMPEON",fila("Campeon","CAMPEON",todas));
+  }
+
+  // ── PREGUNTAS ──
+  if(_misApTab === "preguntas"){
+    var rm={};
+    if(ap && ap.preguntas) ap.preguntas.forEach(function(a){if(a.respuesta)rm[a.id]=a.respuesta;});
+    var pg=[];var sels=[];var ss2={};
+    partidos.forEach(function(p){
+      if(p.fase&&p.fase.indexOf("GRUPO")===0&&p.equipoA!=="POR_DETERMINAR_A")pg.push(p);
+      if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A"&&!ss2[p.equipoA]){ss2[p.equipoA]=true;sels.push(p.equipoA);}
+      if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B"&&!ss2[p.equipoB]){ss2[p.equipoB]=true;sels.push(p.equipoB);}
+    });
+    sels.sort();
+    window._qd = preguntas;
+    h+='<button class="btn" onclick="guardarTodasPreguntas()">Guardar todo</button><div class="fb info" id="msgP1" style="margin-bottom:10px"></div>';
+    preguntas.forEach(function(q){
+      var bl=q.bloqueada;var pv=rm[q.id]||"";
+      var es0=q.pregunta.indexOf("0-0")!==-1;
+      var esSel=q.pregunta.indexOf("elecci")!==-1&&q.opciones.length===0&&!es0;
+      var opts="";
+      if(es0){
+        if(bl)opts='<select disabled><option>'+(pv||"Bloqueado")+"</option></select>";
+        else{opts='<select id="resp-'+q.id+'"><option value="">-- Selecciona un partido --</option>';pg.forEach(function(p){var l=esc(p.equipoA)+" vs "+esc(p.equipoB);opts+='<option value="'+l+'"'+(pv===l?" selected":"")+">"+l+"</option>";});opts+="</select>";}
+      }else if(esSel){
+        if(bl)opts='<select disabled><option>'+(pv||"Bloqueado")+"</option></select>";
+        else{opts='<select id="resp-'+q.id+'"><option value="">-- Selecciona una seleccion --</option>';sels.forEach(function(s){opts+='<option value="'+esc(s)+'"'+(pv===s?" selected":"")+">"+esc(s)+"</option>";});opts+="</select>";}
+      }else if(q.opciones&&q.opciones.length>0){
+        q.opciones.forEach(function(o){var ck=pv===o?" checked":"";opts+='<label class="radio-opt"><input type="radio" name="q'+q.id+'" value="'+esc(o)+'"'+(bl?" disabled":"")+ck+'><span>'+esc(o)+"</span></label>";});
+      }else{
+        if(bl)opts='<input type="text" value="'+esc(pv)+'" disabled>';
+        else opts='<input type="text" id="resp-'+q.id+'" value="'+esc(pv)+'" placeholder="Tu respuesta">';
+      }
+      h+='<div class="q-card"><div class="q-meta"><span class="q-cat">'+esc(q.categoria)+'</span><span class="q-pts">'+q.puntos+" pts</span></div>";
+      h+='<div class="q-txt">'+esc(q.pregunta)+"</div>"+opts;
+      if(pv&&!bl)h+='<div class="q-saved">Guardado: '+esc(pv)+"</div>";
+      if(bl)h+='<div class="q-blocked">Bloqueado — el mundial ha comenzado</div>';
+      h+="</div>";
+    });
+    h+='<div class="fb info" id="msgP2" style="margin-top:4px"></div><button class="btn" onclick="guardarTodasPreguntas()">Guardar todo</button>';
+  }
+
+  setContent(h);
 }
 
 // ── PARTIDOS
