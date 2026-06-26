@@ -213,14 +213,15 @@ function navTo(s,b){document.querySelectorAll("nav button").forEach(function(x){
 
 // ── RANKING
 var _rd=[],_rc="puntos",_rdir=-1;
-var _franjaCache=null,_pendCache=null;
+var _franjaCache=null,_pendCache=null,_clasifCache={};
 
 function loadRanking(){
   setContent('<div class="spinner">Cargando</div>');
-  Promise.all([api("getRanking"), api("getApuestasFranjaFechas"), api("getApuestasPendientes")]).then(function(res){
+  Promise.all([api("getRanking"), api("getApuestasFranjaFechas"), api("getApuestasPendientes"), api("getClasificadosFases")]).then(function(res){
     var d=res[0];
     _franjaCache=res[1]||{};
     _pendCache=res[2]||{};
+    _clasifCache=buildClasifSet(res[3]||{});
     if(!Array.isArray(d)){setContent('<div class="card" style="color:var(--red)">Error al cargar</div>');return;}
     _rd=d;_rc="puntos";_rdir=-1;
     renderRankingCompleto();
@@ -303,19 +304,6 @@ function renderFranjaFechas(franja){
     h+="</div></div>";
   }
 
-  if(cruces.length>0){
-    h+='<div class="card"><div class="card-title">Apuestas de la siguiente fase</div>';
-    cruces.forEach(function(r,idx){
-      h+='<div style="padding:10px 0;border-bottom:1px solid var(--bdr)'+(idx===cruces.length-1?";border-bottom:none":"")+'">';
-      h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--gold)">'+(fln[r.ronda]||r.ronda)+"</div>";
-      r.opciones.forEach(function(o){
-        h+='<div class="a-row"><span class="a-lbl">'+esc(o.equipo)+'</span><span style="font-size:10px;color:var(--gold);text-align:right">'+o.usuarios.map(esc).join(", ")+"</span></div>";
-      });
-      h+="</div>";
-    });
-    h+="</div>";
-  }
-
   return h;
 }
 
@@ -368,17 +356,30 @@ function renderPendientes(pend){
   }
 
   if(_pendTab==="cruces"){
-    if(cruces.length===0){
+    // Filtrar equipos ya clasificados y rondas vacías
+    var crucesFiltradas = cruces.map(function(r){
+      var opcFiltradas = r.opciones.filter(function(o){
+        return !(_clasifCache[r.ronda] && _clasifCache[r.ronda][o.equipo.toUpperCase()]);
+      });
+      return {ronda: r.ronda, opciones: opcFiltradas};
+    }).filter(function(r){ return r.opciones.length > 0; });
+
+    // Si la ronda activa desapareció, resetear a la primera disponible
+    if(crucesFiltradas.length > 0 && !crucesFiltradas.find(function(r){ return r.ronda === _pendCrucesRonda; })){
+      _pendCrucesRonda = crucesFiltradas[0].ronda;
+    }
+
+    if(crucesFiltradas.length===0){
       h+='<p style="color:var(--muted);font-size:12px;text-align:center;padding:16px 0">Sin cruces pendientes</p>';
     }else{
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
-      cruces.forEach(function(r){
+      crucesFiltradas.forEach(function(r){
         var activo=_pendCrucesRonda===r.ronda;
         h+='<button onclick="setPendCrucesRonda(\''+r.ronda+'\')" style="background:'+(activo?"var(--gold)":"var(--surf2)")+';color:'+(activo?"#07080a":"var(--sub)")+';border:1px solid '+(activo?"var(--gold)":"var(--bdr)")+';border-radius:20px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer">'+(fln[r.ronda]||r.ronda)+"</button>";
       });
       h+="</div>";
 
-      var rondaActual = cruces.find(function(r){ return r.ronda === _pendCrucesRonda; }) || cruces[0];
+      var rondaActual = crucesFiltradas.find(function(r){ return r.ronda === _pendCrucesRonda; }) || crucesFiltradas[0];
       rondaActual.opciones.forEach(function(o){
         h+='<div class="a-row"><span class="a-lbl">'+esc(o.equipo)+'</span><span style="font-size:10px;color:var(--gold);text-align:right">'+o.usuarios.map(esc).join(", ")+"</span></div>";
       });
@@ -693,11 +694,13 @@ function loadFases(){
     // "estado" viene de CLASIFICADOS_FASES: si el grupo ya tiene clasificados, el cruce se considera cerrado
 
     function grupoClasif(key){
-      // ¿Tiene ya clasificados el grupo de ese key?
+      // Un slot está "finalizado" si el equipo guardado en ese key ya figura en clasifSet
+      // del grupo de fase al que pertenece (es decir, ya pasó a la siguiente ronda).
       var grupo = grupoDeClaveFront(key);
       if(!grupo || !clasifSet[grupo]) return false;
-      // Si hay al menos un clasificado en ese grupo, los cruces de ESE grupo son "finalizados"
-      return Object.keys(clasifSet[grupo]).length > 0;
+      var pv = (prev[key] || "").toUpperCase();
+      if(!pv) return false;
+      return !!clasifSet[grupo][pv];
     }
 
     function seccionCruces(titulo, secId, filas){
