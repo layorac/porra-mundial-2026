@@ -632,42 +632,264 @@ function guardarFase(fase){
   }).catch(function(){if(msg){msg.textContent="Error de conexion";msg.className="fb err";}});
 }
 
-// ── CLASIFICACION > Cruces (con filtrado de ya clasificados)
+// ── CLASIFICACION > Cruces — vista enfrentamientos (igual que Resultados)
 function loadFases(){
   setContent('<div class="spinner">Cargando</div>');
-  Promise.all([api("getPartidos"),api("getMisFases"),api("getClasificadosFases")]).then(function(res){
-    var pts=res[0];var prev=res[1]||{};var clasif=res[2]||{};
-    var clasifSet=buildClasifSet(clasif);
-    var grupos={};var todas=[];var ss={};
+  Promise.all([api("getPartidos"), api("getMisFases"), api("getClasificadosFases")]).then(function(res){
+    var pts      = res[0];
+    var prev     = res[1] || {};
+    var clasif   = res[2] || {};
+    var clasifSet= buildClasifSet(clasif);
+
+    // ── Construir lista de todos los equipos y equipos por grupo ──
+    var grupos={}, todas=[], ss={};
     pts.forEach(function(p){
-      if(p.fase&&p.fase.indexOf("GRUPO_")===0){var g=p.fase.replace("GRUPO_","");if(!grupos[g])grupos[g]={};
-      if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A")grupos[g][p.equipoA]=true;
-      if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B")grupos[g][p.equipoB]=true;}
+      if(p.fase&&p.fase.indexOf("GRUPO_")===0){
+        var g=p.fase.replace("GRUPO_","");
+        if(!grupos[g])grupos[g]={};
+        if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A")grupos[g][p.equipoA]=true;
+        if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B")grupos[g][p.equipoB]=true;
+      }
       if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A"&&!ss[p.equipoA]){ss[p.equipoA]=true;todas.push(p.equipoA);}
       if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B"&&!ss[p.equipoB]){ss[p.equipoB]=true;todas.push(p.equipoB);}
     });
     todas.sort();
-    function mkSel(id,opts,pv){var s='<select id="fase-'+id+'"><option value="">-- Selecciona --</option>';opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});return s+"</select>";}
-    function fila(lbl,key,base){
-      var opts=optsParaClave(key,base,clasifSet,prev);var pv=prev[key]||"";
-      if(!opts.length&&!pv)return "";
-      return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel(key,opts,pv)+"</div></div>";
+
+    // ── Construir selects (para guardar, ocultos pero funcionales) ──
+    function mkSel(id,opts,pv){
+      var s='<select id="fase-'+id+'" style="display:none">';
+      s+='<option value="">-- Selecciona --</option>';
+      opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});
+      return s+"</select>";
     }
-    function sec(tit,bid,cont){
-      if(!cont)return "";
-      return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';
+
+    // ── Helpers de renderizado de enfrentamiento ──
+    // Devuelve el HTML de una fila de cruce:
+    //   - Si el equipo ya clasificó en ese grupo → muestra el nombre, tachado/sin tachar
+    //   - Si no → vacío con "?"
+    // Además pone los selects ocultos para que guardarSeccionFases siga funcionando.
+    function rowCruce(eqA, eqB, keyA, keyB, baseA, baseB, pA, pB, estado){
+      // Si el partido ya está finalizado, no mostramos la fila
+      if(estado==="FINALIZADO") return "";
+
+      var optsA = optsParaClave(keyA, baseA, clasifSet, prev);
+      var optsB = optsParaClave(keyB, baseB, clasifSet, prev);
+
+      // Etiqueta del equipo: el valor guardado, o "?" si no hay nada
+      var lblA = pA ? esc(pA) : '<span style="color:var(--muted)">?</span>';
+      var lblB = pB ? esc(pB) : '<span style="color:var(--muted)">?</span>';
+
+      var selA = mkSel(keyA, optsA, pA);
+      var selB = mkSel(keyB, optsB, pB);
+
+      return '<div class="m-row">'+selA+selB+
+             '<span class="m-team">'+lblA+'</span>'+
+             '<div class="m-vs">vs</div>'+
+             '<span class="m-team r">'+lblB+'</span></div>';
     }
+
+    // ── Construir secciones ──
+    // Cada sección: array de {keyA, keyB, baseA, baseB, estado}
+    // "estado" viene de CLASIFICADOS_FASES: si el grupo ya tiene clasificados, el cruce se considera cerrado
+
+    function grupoClasif(key){
+      // ¿Tiene ya clasificados el grupo de ese key?
+      var grupo = grupoDeClaveFront(key);
+      if(!grupo || !clasifSet[grupo]) return false;
+      // Si hay al menos un clasificado en ese grupo, los cruces de ESE grupo son "finalizados"
+      return Object.keys(clasifSet[grupo]).length > 0;
+    }
+
+    function seccionCruces(titulo, secId, filas){
+      if(!filas) return "";
+      // Filtrar filas vacías (partidos finalizados)
+      var contenido = filas.split("").join(""); // filas ya es string acumulado
+      if(!contenido.trim()) return "";
+      return '<div class="fase-hdr">'+titulo+'</div>'+
+             '<div class="card">'+contenido+
+             '<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+secId+'\')">Guardar</button>'+
+             '<div class="fb info" id="msg-'+secId+'"></div></div>';
+    }
+
+    // ── Dieciseisavos ──
     var lets=["A","B","C","D","E","F","G","H","I","J","K","L"];
-    var d16="";lets.forEach(function(l){var eq=Object.keys(grupos[l]||{}).sort();d16+=fila("1 Grupo "+l,"D16_1_"+l,eq)+fila("2 Grupo "+l,"D16_2_"+l,eq);});
-    for(var t=1;t<=8;t++)d16+=fila("3 mejor "+t,"D16_T"+t,todas);
-    var oct="";for(var d=1;d<=16;d++)oct+=fila("Clasificado "+d,"OCT_"+d,todas);
-    var qf="";for(var q=1;q<=8;q++)qf+=fila("Cuartofinalista "+q,"QF_"+q,todas);
-    var sf="";for(var s=1;s<=4;s++)sf+=fila("Semifinalista "+s,"SF_"+s,todas);
-    var fin=fila("Finalista 1","FIN_1",todas)+fila("Finalista 2","FIN_2",todas)+fila("3er clasificado","TERCER",todas);
-    setContent(sec("Dieciseisavos \u2014 3 pts","DIECISEISAVOS",d16)+sec("Octavos \u2014 5 pts","OCTAVOS",oct)+sec("Cuartos \u2014 7 pts","CUARTOS",qf)+sec("Semifinales \u2014 9 pts","SEMIFINAL",sf)+sec("Finalistas \u2014 11 pts","FINALISTAS",fin)+sec("Campe\u00f3n \u2014 16 pts","CAMPEON",fila("Campe\u00f3n","CAMPEON",todas)));
+    var d16="";
+    lets.forEach(function(l){
+      var eq=Object.keys(grupos[l]||{}).sort();
+      var k1="D16_1_"+l, k2="D16_2_"+l;
+      var fin1=grupoClasif(k1), fin2=grupoClasif(k2);
+      if(!fin1) d16+=rowCruce(prev[k1]||"?","",k1,"",eq,eq,prev[k1]||"",prev[k2]||"","PENDIENTE");
+      if(!fin2) d16+=rowCruce("",prev[k2]||"?","",k2,eq,eq,prev[k1]||"",prev[k2]||"","PENDIENTE");
+      // Versión correcta: una fila por slot
+    });
+    // Reconstruir d16 correctamente: una fila por slot (1 Grupo X, 2 Grupo X)
+    d16="";
+    lets.forEach(function(l){
+      var eq=Object.keys(grupos[l]||{}).sort();
+      var k1="D16_1_"+l, k2="D16_2_"+l;
+      // Slot 1
+      if(!grupoClasif(k1)){
+        var pv=prev[k1]||"";
+        var opts=optsParaClave(k1,eq,clasifSet,prev);
+        var lbl=pv?esc(pv):'<span style="color:var(--muted)">?</span>';
+        d16+='<div class="m-row">'+mkSel(k1,opts,pv)+
+             '<span class="m-team" style="font-size:11px;color:var(--sub)">1 Grupo '+l+'</span>'+
+             '<div class="m-vs" style="font-size:11px">→</div>'+
+             '<span class="m-team r">'+lbl+'</span></div>';
+      }
+      // Slot 2
+      if(!grupoClasif(k2)){
+        var pv2=prev[k2]||"";
+        var opts2=optsParaClave(k2,eq,clasifSet,prev);
+        var lbl2=pv2?esc(pv2):'<span style="color:var(--muted)">?</span>';
+        d16+='<div class="m-row">'+mkSel(k2,opts2,pv2)+
+             '<span class="m-team" style="font-size:11px;color:var(--sub)">2 Grupo '+l+'</span>'+
+             '<div class="m-vs" style="font-size:11px">→</div>'+
+             '<span class="m-team r">'+lbl2+'</span></div>';
+      }
+    });
+    // Mejores 3os
+    for(var t=1;t<=8;t++){
+      var kt="D16_T"+t;
+      if(!grupoClasif(kt)){
+        var pvt=prev[kt]||"";
+        var optst=optsParaClave(kt,todas,clasifSet,prev);
+        var lblt=pvt?esc(pvt):'<span style="color:var(--muted)">?</span>';
+        d16+='<div class="m-row">'+mkSel(kt,optst,pvt)+
+             '<span class="m-team" style="font-size:11px;color:var(--sub)">3\u00ba mejor '+t+'</span>'+
+             '<div class="m-vs" style="font-size:11px">→</div>'+
+             '<span class="m-team r">'+lblt+'</span></div>';
+      }
+    }
+
+    // ── Función genérica para octavos/cuartos/semi/finalistas ──
+    function secSlots(prefijo, count, labelFn){
+      var html="";
+      for(var i=1;i<=count;i++){
+        var key=prefijo+i;
+        if(grupoClasif(key)) continue;
+        var pv=prev[key]||"";
+        var opts=optsParaClave(key,todas,clasifSet,prev);
+        var lbl=pv?esc(pv):'<span style="color:var(--muted)">?</span>';
+        // Intentar mostrar como enfrentamiento emparejando slots consecutivos impares/pares
+        html+='<div class="m-row">'+mkSel(key,opts,pv)+
+              '<span class="m-team" style="font-size:11px;color:var(--sub)">'+labelFn(i)+'</span>'+
+              '<div class="m-vs" style="font-size:11px">→</div>'+
+              '<span class="m-team r">'+lbl+'</span></div>';
+      }
+      return html;
+    }
+
+    // Octavos: mostrar como enfrentamientos (slots 1-2, 3-4, etc.)
+    var oct=""; 
+    for(var d=1;d<=16;d+=2){
+      var kA="OCT_"+d, kB="OCT_"+(d+1);
+      var finA=grupoClasif(kA), finB=grupoClasif(kB);
+      if(finA&&finB) continue; // ambos resueltos
+      var pvA=prev[kA]||"", pvB=prev[kB]||"";
+      var optsA2=optsParaClave(kA,todas,clasifSet,prev);
+      var optsB2=optsParaClave(kB,todas,clasifSet,prev);
+      var lblA2=pvA?esc(pvA):'<span style="color:var(--muted)">?</span>';
+      var lblB2=pvB?esc(pvB):'<span style="color:var(--muted)">?</span>';
+      oct+='<div class="m-row">'+mkSel(kA,optsA2,pvA)+mkSel(kB,optsB2,pvB)+
+           '<span class="m-team">'+lblA2+'</span>'+
+           '<div class="m-vs">vs</div>'+
+           '<span class="m-team r">'+lblB2+'</span></div>';
+    }
+
+    var qf="";
+    for(var q=1;q<=8;q+=2){
+      var kA="QF_"+q, kB="QF_"+(q+1);
+      var finA=grupoClasif(kA), finB=grupoClasif(kB);
+      if(finA&&finB) continue;
+      var pvA=prev[kA]||"", pvB=prev[kB]||"";
+      var optsA2=optsParaClave(kA,todas,clasifSet,prev);
+      var optsB2=optsParaClave(kB,todas,clasifSet,prev);
+      var lblA2=pvA?esc(pvA):'<span style="color:var(--muted)">?</span>';
+      var lblB2=pvB?esc(pvB):'<span style="color:var(--muted)">?</span>';
+      qf+='<div class="m-row">'+mkSel(kA,optsA2,pvA)+mkSel(kB,optsB2,pvB)+
+          '<span class="m-team">'+lblA2+'</span>'+
+          '<div class="m-vs">vs</div>'+
+          '<span class="m-team r">'+lblB2+'</span></div>';
+    }
+
+    var sf="";
+    for(var sv=1;sv<=4;sv+=2){
+      var kA="SF_"+sv, kB="SF_"+(sv+1);
+      var finA=grupoClasif(kA), finB=grupoClasif(kB);
+      if(finA&&finB) continue;
+      var pvA=prev[kA]||"", pvB=prev[kB]||"";
+      var optsA2=optsParaClave(kA,todas,clasifSet,prev);
+      var optsB2=optsParaClave(kB,todas,clasifSet,prev);
+      var lblA2=pvA?esc(pvA):'<span style="color:var(--muted)">?</span>';
+      var lblB2=pvB?esc(pvB):'<span style="color:var(--muted)">?</span>';
+      sf+='<div class="m-row">'+mkSel(kA,optsA2,pvA)+mkSel(kB,optsB2,pvB)+
+          '<span class="m-team">'+lblA2+'</span>'+
+          '<div class="m-vs">vs</div>'+
+          '<span class="m-team r">'+lblB2+'</span></div>';
+    }
+
+    // Finalistas + 3er puesto
+    var fin="";
+    var kF1="FIN_1",kF2="FIN_2",kT="TERCER",kC="CAMPEON";
+    var finF1=grupoClasif(kF1),finF2=grupoClasif(kF2),finT=grupoClasif(kT);
+    if(!finF1||!finF2){
+      var pvF1=prev[kF1]||"",pvF2=prev[kF2]||"";
+      var oF1=optsParaClave(kF1,todas,clasifSet,prev);
+      var oF2=optsParaClave(kF2,todas,clasifSet,prev);
+      var lF1=pvF1?esc(pvF1):'<span style="color:var(--muted)">?</span>';
+      var lF2=pvF2?esc(pvF2):'<span style="color:var(--muted)">?</span>';
+      fin+='<div style="font-size:9px;color:var(--muted);padding:4px 0 2px;letter-spacing:1px;text-transform:uppercase">Final</div>';
+      fin+='<div class="m-row">'+mkSel(kF1,oF1,pvF1)+mkSel(kF2,oF2,pvF2)+
+           '<span class="m-team">'+lF1+'</span>'+
+           '<div class="m-vs">vs</div>'+
+           '<span class="m-team r">'+lF2+'</span></div>';
+    }
+    if(!finT){
+      var pvT=prev[kT]||"";
+      var oT=optsParaClave(kT,todas,clasifSet,prev);
+      var lT=pvT?esc(pvT):'<span style="color:var(--muted)">?</span>';
+      fin+='<div style="font-size:9px;color:var(--muted);padding:8px 0 2px;letter-spacing:1px;text-transform:uppercase">3er puesto</div>';
+      fin+='<div class="m-row">'+mkSel(kT,oT,pvT)+
+           '<span class="m-team" style="font-size:11px;color:var(--sub)">3er clasificado</span>'+
+           '<div class="m-vs" style="font-size:11px">→</div>'+
+           '<span class="m-team r">'+lT+'</span></div>';
+    }
+
+    // Campeón
+    var camp="";
+    if(!grupoClasif(kC)){
+      var pvC=prev[kC]||"";
+      var oC=optsParaClave(kC,todas,clasifSet,prev);
+      var lC=pvC?esc(pvC):'<span style="color:var(--muted)">?</span>';
+      camp='<div class="m-row">'+mkSel(kC,oC,pvC)+
+           '<span class="m-team" style="font-size:11px;color:var(--sub)">\uD83C\uDFC6 Campe\u00f3n</span>'+
+           '<div class="m-vs" style="font-size:11px">→</div>'+
+           '<span class="m-team r" style="color:var(--gold);font-weight:700">'+lC+'</span></div>';
+    }
+
+    function sec(tit,bid,cont){
+      if(!cont.trim()) return "";
+      return '<div class="fase-hdr">'+tit+'</div>'+
+             '<div class="card">'+cont+
+             '<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+
+             '<div class="fb info" id="msg-'+bid+'"></div></div>';
+    }
+
+    var html = sec("Dieciseisavos \u2014 3 pts","DIECISEISAVOS",d16)+
+               sec("Octavos \u2014 5 pts","OCTAVOS",oct)+
+               sec("Cuartos \u2014 7 pts","CUARTOS",qf)+
+               sec("Semifinales \u2014 9 pts","SEMIFINAL",sf)+
+               sec("Finalistas \u2014 11 pts","FINALISTAS",fin)+
+               sec("Campe\u00f3n \u2014 16 pts","CAMPEON",camp);
+
+    if(!html.trim()){
+      html='<div class="card"><p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Todas las fases resueltas \u2014 sin cruces pendientes</p></div>';
+    }
+
+    setContent(html);
   }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
 }
-
 function guardarSeccionFases(sec){
   var pref={"DIECISEISAVOS":["D16_"],"OCTAVOS":["OCT_"],"CUARTOS":["QF_"],"SEMIFINAL":["SF_"],"FINALISTAS":["FIN_","TERCER"],"CAMPEON":["CAMPEON"]};
   var msg=document.getElementById("msg-"+sec);var btn=document.querySelector('[onclick="guardarSeccionFases(\''+sec+'\')"]');
