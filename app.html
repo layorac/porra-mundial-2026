@@ -182,9 +182,6 @@ input:disabled{color:var(--muted)}
 <nav>
   <button class="active" onclick="navTo('ranking',this)">Clasificacion</button>
   <button onclick="navTo('resultados',this)">Resultados</button>
-
-
-
   <button onclick="navTo('misapuestas',this)">Mis Apuestas</button>
   <button onclick="navTo('apuestas',this)">Apuestas</button>
   <button onclick="navTo('normas',this)">Normas</button>
@@ -192,7 +189,6 @@ input:disabled{color:var(--muted)}
 <main id="content"><div class="spinner">Cargando</div></main>
 
 <script>
-// ⚠️ Sustituye por tu URL real de Apps Script
 var API="https://script.google.com/macros/s/AKfycbzj_QmdDzL7FzrxaY4L6FRd4wu2L2we-1g07rSO7SRrqLE4Vdh163BueIgU8zGS7x_2/exec";
 var token="";
 var nombre="Jugador";
@@ -275,13 +271,13 @@ function renderFranjaFechas(franja){
 
   var fln={"DIECISEISAVOS":"Dieciseisavos","OCTAVOS":"Octavos","CUARTOS":"Cuartos","SEMIFINAL":"Semifinales","TERCER_PUESTO":"3er y 4o puesto","FINAL":"Final","CAMPEON":"Campeon"};
 
-  var h='<div class="fase-hdr">Hoy y mañana</div>';
+  var h='<div class="fase-hdr">Hoy y ma\u00f1ana</div>';
 
   if(pHoy.length>0 || pManana.length>0){
     h+='<div class="card" style="padding:0;overflow:hidden">';
     h+='<div style="display:flex;border-bottom:1px solid var(--bdr)">';
     h+='<button onclick="setFranjaTab(\'hoy\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="hoy"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="hoy"?"var(--gold)":"transparent")+'">Hoy ('+pHoy.length+')</button>';
-    h+='<button onclick="setFranjaTab(\'manana\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="manana"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="manana"?"var(--gold)":"transparent")+'">Mañana ('+pManana.length+')</button>';
+    h+='<button onclick="setFranjaTab(\'manana\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="manana"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="manana"?"var(--gold)":"transparent")+'">Ma\u00f1ana ('+pManana.length+')</button>';
     h+="</div>";
 
     h+='<div style="padding:16px">';
@@ -423,16 +419,17 @@ function setPendCrucesRonda(ronda){
   renderRankingCompleto();
 }
 
-// ── MIS APUESTAS (fusión de Partidos, Cruces y Preguntas)
+// ── MIS APUESTAS
 var _misApTab = "partidos";
 
 function loadMisApuestas(){
   setContent('<div class="spinner">Cargando</div>');
-  Promise.all([api("getPartidos"), api("getMisFases"), api("getMisApuestas"), api("getPreguntas")]).then(function(res){
+  Promise.all([api("getPartidos"), api("getMisFases"), api("getMisApuestas"), api("getPreguntas"), api("getClasificadosFases")]).then(function(res){
     window._maPartidos = res[0];
     window._maFasesPrev = res[1] || {};
     window._maAp = res[2];
     window._maPreguntas = res[3];
+    window._maClasif = res[4] || {};
     renderMisApuestas();
   }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
 }
@@ -447,11 +444,45 @@ function misApTabBtn(tab, label){
   return '<button onclick="setMisApTab(\''+tab+'\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(activo?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(activo?"var(--gold)":"transparent")+'">'+label+"</button>";
 }
 
+// Helper compartido: dado un grupo de fase y lista base de equipos, filtra los ya clasificados
+// salvo que el equipo ya sea el valor guardado para esa clave concreta.
+function optsParaClave(key, base, clasifSet, prev){
+  var grupo = grupoDeClaveFront(key);
+  if(!grupo || !clasifSet[grupo]) return base;
+  var yaGuardado = (prev[key] || "").toUpperCase();
+  return base.filter(function(o){
+    var u = o.toUpperCase();
+    return !clasifSet[grupo][u] || u === yaGuardado;
+  });
+}
+
+function grupoDeClaveFront(clave){
+  if(clave.indexOf("D16_")===0) return "DIECISEISAVOS";
+  if(clave.indexOf("OCT_")===0) return "OCTAVOS";
+  if(clave.indexOf("QF_")===0)  return "CUARTOS";
+  if(clave.indexOf("SF_")===0)  return "SEMIFINAL";
+  if(clave.indexOf("FIN_")===0 || clave==="TERCER") return "FINALISTAS";
+  if(clave==="CAMPEON") return "CAMPEON";
+  return null;
+}
+
+function buildClasifSet(clasif){
+  var set = {};
+  Object.keys(clasif).forEach(function(grupo){
+    (clasif[grupo]||[]).forEach(function(eq){
+      if(!set[grupo]) set[grupo] = {};
+      set[grupo][eq.toUpperCase()] = true;
+    });
+  });
+  return set;
+}
+
 function renderMisApuestas(){
   var partidos = window._maPartidos || [];
   var prev = window._maFasesPrev || {};
   var ap = window._maAp || {};
   var preguntas = window._maPreguntas || [];
+  var clasifSet = buildClasifSet(window._maClasif || {});
 
   var h = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">';
   h += '<div style="display:flex;border-bottom:1px solid var(--bdr)">';
@@ -477,14 +508,14 @@ function renderMisApuestas(){
       h+='<div class="partido"><div class="eq">'+esc(p.equipoA)+"</div>";
       h+='<div class="p-mid">'+badge;
       if(p.fecha)h+='<div class="fecha">'+p.fecha+"</div>";
-      h+='<div class="sc-wrap"><input type="number" min="0" max="20" placeholder="0" id="gA-'+p.id+'" value="'+pA+'"><span class="sc-sep">—</span><input type="number" min="0" max="20" placeholder="0" id="gB-'+p.id+'" value="'+pB+'"></div>';
+      h+='<div class="sc-wrap"><input type="number" min="0" max="20" placeholder="0" id="gA-'+p.id+'" value="'+pA+'"><span class="sc-sep">\u2014</span><input type="number" min="0" max="20" placeholder="0" id="gB-'+p.id+'" value="'+pB+'"></div>';
       if(pA!=="")h+='<div class="saved-ok">guardado</div>';
       h+="</div>"+'<div class="eq r">'+esc(p.equipoB)+"</div></div>";
     });
     cerrar();
   }
 
-  // ── CRUCES ──
+  // ── CRUCES ── (con filtrado de ya clasificados)
   if(_misApTab === "cruces"){
     var grupos={};var todas=[];var ss={};
     partidos.forEach(function(p){
@@ -495,17 +526,24 @@ function renderMisApuestas(){
       if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B"&&!ss[p.equipoB]){ss[p.equipoB]=true;todas.push(p.equipoB);}
     });
     todas.sort();
-    function mkSel(id,opts,pv){var s='<select id="fase-'+id+'"><option value="">-- Selecciona --</option>';opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});return s+"</select>";}
-    function fila(lbl,key,opts){return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel(key,opts,prev[key]||"")+"</div></div>";}
-    function sec(tit,bid,cont){return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';}
+    function mkSel2(id,opts,pv){var s='<select id="fase-'+id+'"><option value="">-- Selecciona --</option>';opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});return s+"</select>";}
+    function fila2(lbl,key,base){
+      var opts=optsParaClave(key,base,clasifSet,prev);var pv=prev[key]||"";
+      if(!opts.length&&!pv)return "";
+      return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel2(key,opts,pv)+"</div></div>";
+    }
+    function sec2(tit,bid,cont){
+      if(!cont)return "";
+      return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';
+    }
     var lets=["A","B","C","D","E","F","G","H","I","J","K","L"];
-    var d16="";lets.forEach(function(l){var eq=Object.keys(grupos[l]||{}).sort();d16+=fila("1 Grupo "+l,"D16_1_"+l,eq)+fila("2 Grupo "+l,"D16_2_"+l,eq);});
-    for(var t=1;t<=8;t++)d16+=fila("3 mejor "+t,"D16_T"+t,todas);
-    var oct="";for(var d=1;d<=16;d++)oct+=fila("Clasificado "+d,"OCT_"+d,todas);
-    var qf="";for(var q=1;q<=8;q++)qf+=fila("Cuartofinalista "+q,"QF_"+q,todas);
-    var sf="";for(var s=1;s<=4;s++)sf+=fila("Semifinalista "+s,"SF_"+s,todas);
-    var fin=fila("Finalista 1","FIN_1",todas)+fila("Finalista 2","FIN_2",todas)+fila("3er clasificado","TERCER",todas);
-    h+=sec("Dieciseisavos — 3 pts","DIECISEISAVOS",d16)+sec("Octavos — 5 pts","OCTAVOS",oct)+sec("Cuartos — 7 pts","CUARTOS",qf)+sec("Semifinales — 9 pts","SEMIFINAL",sf)+sec("Finalistas — 11 pts","FINALISTAS",fin)+sec("Campeon — 16 pts","CAMPEON",fila("Campeon","CAMPEON",todas));
+    var d16="";lets.forEach(function(l){var eq=Object.keys(grupos[l]||{}).sort();d16+=fila2("1 Grupo "+l,"D16_1_"+l,eq)+fila2("2 Grupo "+l,"D16_2_"+l,eq);});
+    for(var t=1;t<=8;t++)d16+=fila2("3 mejor "+t,"D16_T"+t,todas);
+    var oct="";for(var d=1;d<=16;d++)oct+=fila2("Clasificado "+d,"OCT_"+d,todas);
+    var qf="";for(var q=1;q<=8;q++)qf+=fila2("Cuartofinalista "+q,"QF_"+q,todas);
+    var sf="";for(var s=1;s<=4;s++)sf+=fila2("Semifinalista "+s,"SF_"+s,todas);
+    var fin=fila2("Finalista 1","FIN_1",todas)+fila2("Finalista 2","FIN_2",todas)+fila2("3er clasificado","TERCER",todas);
+    h+=sec2("Dieciseisavos \u2014 3 pts","DIECISEISAVOS",d16)+sec2("Octavos \u2014 5 pts","OCTAVOS",oct)+sec2("Cuartos \u2014 7 pts","CUARTOS",qf)+sec2("Semifinales \u2014 9 pts","SEMIFINAL",sf)+sec2("Finalistas \u2014 11 pts","FINALISTAS",fin)+sec2("Campe\u00f3n \u2014 16 pts","CAMPEON",fila2("Campe\u00f3n","CAMPEON",todas));
   }
 
   // ── PREGUNTAS ──
@@ -541,7 +579,7 @@ function renderMisApuestas(){
       h+='<div class="q-card"><div class="q-meta"><span class="q-cat">'+esc(q.categoria)+'</span><span class="q-pts">'+q.puntos+" pts</span></div>";
       h+='<div class="q-txt">'+esc(q.pregunta)+"</div>"+opts;
       if(pv&&!bl)h+='<div class="q-saved">Guardado: '+esc(pv)+"</div>";
-      if(bl)h+='<div class="q-blocked">Bloqueado — el mundial ha comenzado</div>';
+      if(bl)h+='<div class="q-blocked">Bloqueado \u2014 el mundial ha comenzado</div>';
       h+="</div>";
     });
     h+='<div class="fb info" id="msgP2" style="margin-top:4px"></div><button class="btn" onclick="guardarTodasPreguntas()">Guardar todo</button>';
@@ -550,7 +588,7 @@ function renderMisApuestas(){
   setContent(h);
 }
 
-// ── PARTIDOS
+// ── PARTIDOS (vista standalone — no se usa en nav actual pero se mantiene)
 function loadPartidos(){
   setContent('<div class="spinner">Cargando</div>');
   Promise.all([api("getPartidos"),api("getMisApuestas")]).then(function(res){
@@ -569,13 +607,14 @@ function loadPartidos(){
       h+='<div class="partido"><div class="eq">'+esc(p.equipoA)+"</div>";
       h+='<div class="p-mid">'+badge;
       if(p.fecha)h+='<div class="fecha">'+p.fecha+"</div>";
-      h+='<div class="sc-wrap"><input type="number" min="0" max="20" placeholder="0" id="gA-'+p.id+'" value="'+pA+'"><span class="sc-sep">—</span><input type="number" min="0" max="20" placeholder="0" id="gB-'+p.id+'" value="'+pB+'"></div>';
+      h+='<div class="sc-wrap"><input type="number" min="0" max="20" placeholder="0" id="gA-'+p.id+'" value="'+pA+'"><span class="sc-sep">\u2014</span><input type="number" min="0" max="20" placeholder="0" id="gB-'+p.id+'" value="'+pB+'"></div>';
       if(pA!=="")h+='<div class="saved-ok">guardado</div>';
       h+="</div>"+'<div class="eq r">'+esc(p.equipoB)+"</div></div>";
     });
     cerrar();setContent(h);
   }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
 }
+
 function guardarFase(fase){
   var pts=(window._pd||[]).filter(function(p){return p.fase===fase;});
   var msg=document.getElementById("msg-"+fase);
@@ -593,11 +632,12 @@ function guardarFase(fase){
   }).catch(function(){if(msg){msg.textContent="Error de conexion";msg.className="fb err";}});
 }
 
-// ── FASES
+// ── CLASIFICACION > Cruces (con filtrado de ya clasificados)
 function loadFases(){
   setContent('<div class="spinner">Cargando</div>');
-  Promise.all([api("getPartidos"),api("getMisFases")]).then(function(res){
-    var pts=res[0];var prev=res[1]||{};
+  Promise.all([api("getPartidos"),api("getMisFases"),api("getClasificadosFases")]).then(function(res){
+    var pts=res[0];var prev=res[1]||{};var clasif=res[2]||{};
+    var clasifSet=buildClasifSet(clasif);
     var grupos={};var todas=[];var ss={};
     pts.forEach(function(p){
       if(p.fase&&p.fase.indexOf("GRUPO_")===0){var g=p.fase.replace("GRUPO_","");if(!grupos[g])grupos[g]={};
@@ -608,8 +648,15 @@ function loadFases(){
     });
     todas.sort();
     function mkSel(id,opts,pv){var s='<select id="fase-'+id+'"><option value="">-- Selecciona --</option>';opts.forEach(function(o){s+='<option value="'+esc(o)+'"'+(pv===o?" selected":"")+">"+esc(o)+"</option>";});return s+"</select>";}
-    function fila(lbl,key,opts){return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel(key,opts,prev[key]||"")+"</div></div>";}
-    function sec(tit,bid,cont){return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';}
+    function fila(lbl,key,base){
+      var opts=optsParaClave(key,base,clasifSet,prev);var pv=prev[key]||"";
+      if(!opts.length&&!pv)return "";
+      return '<div class="f-row"><span class="f-lbl">'+lbl+'</span><div class="f-sel">'+mkSel(key,opts,pv)+"</div></div>";
+    }
+    function sec(tit,bid,cont){
+      if(!cont)return "";
+      return '<div class="fase-hdr">'+tit+"</div>"+'<div class="card">'+cont+'<button class="btn-ghost" style="margin-top:12px" onclick="guardarSeccionFases(\''+bid+'\')">Guardar</button>'+'<div class="fb info" id="msg-'+bid+'"></div></div>';
+    }
     var lets=["A","B","C","D","E","F","G","H","I","J","K","L"];
     var d16="";lets.forEach(function(l){var eq=Object.keys(grupos[l]||{}).sort();d16+=fila("1 Grupo "+l,"D16_1_"+l,eq)+fila("2 Grupo "+l,"D16_2_"+l,eq);});
     for(var t=1;t<=8;t++)d16+=fila("3 mejor "+t,"D16_T"+t,todas);
@@ -617,9 +664,10 @@ function loadFases(){
     var qf="";for(var q=1;q<=8;q++)qf+=fila("Cuartofinalista "+q,"QF_"+q,todas);
     var sf="";for(var s=1;s<=4;s++)sf+=fila("Semifinalista "+s,"SF_"+s,todas);
     var fin=fila("Finalista 1","FIN_1",todas)+fila("Finalista 2","FIN_2",todas)+fila("3er clasificado","TERCER",todas);
-    setContent(sec("Dieciseisavos — 3 pts","DIECISEISAVOS",d16)+sec("Octavos — 5 pts","OCTAVOS",oct)+sec("Cuartos — 7 pts","CUARTOS",qf)+sec("Semifinales — 9 pts","SEMIFINAL",sf)+sec("Finalistas — 11 pts","FINALISTAS",fin)+sec("Campeon — 16 pts","CAMPEON",fila("Campeon","CAMPEON",todas)));
+    setContent(sec("Dieciseisavos \u2014 3 pts","DIECISEISAVOS",d16)+sec("Octavos \u2014 5 pts","OCTAVOS",oct)+sec("Cuartos \u2014 7 pts","CUARTOS",qf)+sec("Semifinales \u2014 9 pts","SEMIFINAL",sf)+sec("Finalistas \u2014 11 pts","FINALISTAS",fin)+sec("Campe\u00f3n \u2014 16 pts","CAMPEON",fila("Campe\u00f3n","CAMPEON",todas)));
   }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
 }
+
 function guardarSeccionFases(sec){
   var pref={"DIECISEISAVOS":["D16_"],"OCTAVOS":["OCT_"],"CUARTOS":["QF_"],"SEMIFINAL":["SF_"],"FINALISTAS":["FIN_","TERCER"],"CAMPEON":["CAMPEON"]};
   var msg=document.getElementById("msg-"+sec);var btn=document.querySelector('[onclick="guardarSeccionFases(\''+sec+'\')"]');
@@ -671,13 +719,14 @@ function loadPreguntas(){
       h+='<div class="q-card"><div class="q-meta"><span class="q-cat">'+esc(q.categoria)+'</span><span class="q-pts">'+q.puntos+" pts</span></div>";
       h+='<div class="q-txt">'+esc(q.pregunta)+"</div>"+opts;
       if(pv&&!bl)h+='<div class="q-saved">Guardado: '+esc(pv)+"</div>";
-      if(bl)h+='<div class="q-blocked">Bloqueado — el mundial ha comenzado</div>';
+      if(bl)h+='<div class="q-blocked">Bloqueado \u2014 el mundial ha comenzado</div>';
       h+="</div>";
     });
     h+='<div class="fb info" id="msgP2" style="margin-top:4px"></div><button class="btn" onclick="guardarTodasPreguntas()">Guardar todo</button>';
     setContent(h);
   }).catch(function(){setContent('<div class="card" style="color:var(--red)">Error de conexion</div>');});
 }
+
 function guardarTodasPreguntas(){
   var data=window._qd;if(!data)return;
   var pends=[];
@@ -753,7 +802,7 @@ function cargarApuestas(id){
       else if(clave.indexOf("SF_")===0)lbl="Semifinal "+clave.replace("SF_","");
       else if(clave.indexOf("FIN_")===0)lbl="Finalista "+clave.replace("FIN_","");
       else if(clave==="TERCER")lbl="3er clasificado";
-      else if(clave==="CAMPEON")lbl="Campeon";
+      else if(clave==="CAMPEON")lbl="Campe\u00f3n";
       var val=eq?'<span class="a-val">'+esc(eq)+"</span>":'<span class="a-empty">Sin apuesta</span>';
       h+='<div class="a-row"><span class="a-lbl">'+lbl+"</span>"+val+"</div>";
     });
@@ -822,7 +871,6 @@ function renderResultados(){
             h+='<div class="m-vs">vs<br><span style="font-size:9px">'+(pm.fecha||"")+"</span></div>";
           }
           h+='<span class="m-team r'+(pm.estado==="FINALIZADO"&&!wB?" dim":"")+'">' +esc(pm.equipoB)+"</span></div>";
-
           if(pm.estado==="FINALIZADO" && ac.aciertosPartidos && ac.aciertosPartidos[pm.id]){
             var acP=ac.aciertosPartidos[pm.id];
             if(acP.exactos.length>0) h+='<div style="font-size:10px;color:var(--gold);padding:2px 0 0 0">Exacto: '+acP.exactos.map(esc).join(", ")+"</div>";
@@ -836,13 +884,18 @@ function renderResultados(){
     });
   }
 
+  // ── RESULTADOS > CRUCES: partidos eliminatorios + quién acertó cada clasificado ──
   if(_resTab==="cruces"){
     var fls=["DIECISEISAVOS","OCTAVOS","CUARTOS","SEMIFINAL","TERCER_PUESTO","FINAL"];
     var fln={"DIECISEISAVOS":"Dieciseisavos","OCTAVOS":"Octavos","CUARTOS":"Cuartos","SEMIFINAL":"Semifinales","TERCER_PUESTO":"3er y 4o puesto","FINAL":"Final"};
+    // Mapeo fase del partido → grupo de aciertos en aciertosCrucesPorEquipo
+    var faseAGrupo={"DIECISEISAVOS":"DIECISEISAVOS","OCTAVOS":"OCTAVOS","CUARTOS":"CUARTOS","SEMIFINAL":"SEMIFINAL","FINAL":"FINALISTAS","TERCER_PUESTO":"FINALISTAS"};
     var hayEliminatorios = false;
     fls.forEach(function(fase){
       var pf=data.eliminatorios.filter(function(p){return p.fase===fase;});if(!pf.length)return;
       hayEliminatorios = true;
+      var grupoAc = faseAGrupo[fase] || fase;
+      var aciertosClasif = (ac.aciertosCrucesPorEquipo && ac.aciertosCrucesPorEquipo[grupoAc]) ? ac.aciertosCrucesPorEquipo[grupoAc] : {};
       h+='<div class="fase-hdr">'+(fln[fase]||fase)+"</div>"+'<div class="card">';
       pf.forEach(function(p){
         var eA=(!p.equipoA||p.equipoA==="POR_DETERMINAR_A")?"?":esc(p.equipoA);
@@ -852,6 +905,20 @@ function renderResultados(){
           h+='<span class="m-score"><span style="color:'+(gA>gB?"var(--green)":"var(--text)")+'">'+gA+'</span><span style="color:var(--muted)"> - </span><span style="color:'+(gB>gA?"var(--green)":"var(--text)")+'">'+gB+"</span></span>";
         }else{h+='<div class="m-vs">vs<br><span style="font-size:9px">'+(p.fecha||"Por jugar")+"</span></div>";}
         h+='<span class="m-team r">'+eB+"</span></div>";
+        // Aciertos del equipo A
+        if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A"){
+          var keyA=p.equipoA.toUpperCase();
+          if(aciertosClasif[keyA]&&aciertosClasif[keyA].length){
+            h+='<div style="font-size:10px;color:var(--gold);padding:1px 0 0 0">'+esc(p.equipoA)+': '+aciertosClasif[keyA].map(esc).join(", ")+"</div>";
+          }
+        }
+        // Aciertos del equipo B
+        if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B"){
+          var keyB=p.equipoB.toUpperCase();
+          if(aciertosClasif[keyB]&&aciertosClasif[keyB].length){
+            h+='<div style="font-size:10px;color:var(--gold);padding:1px 0 6px 0">'+esc(p.equipoB)+': '+aciertosClasif[keyB].map(esc).join(", ")+"</div>";
+          }
+        }
       });
       h+="</div>";
     });
@@ -862,7 +929,7 @@ function renderResultados(){
 
   if(_resTab==="preguntas"){
     if(pichTodos.length>0){
-      h+='<div class="fase-hdr">Pichichi — Goles extra</div><div class="card">';
+      h+='<div class="fase-hdr">Pichichi \u2014 Goles extra</div><div class="card">';
       pichTodos.forEach(function(p){
         var goles=p.goles||0;
         var pts=goles===0?"0 pts":(goles===1?"+1 pt":"+"+goles+" pts");
@@ -871,7 +938,6 @@ function renderResultados(){
       });
       h+="</div>";
     }
-
     h+='<div class="fase-hdr">Respuestas correctas</div><div class="card">';
     if(!data.respCorrectas||!data.respCorrectas.length){h+='<p style="color:var(--muted);font-size:12px">Aun no hay respuestas reveladas</p>';}
     else{data.respCorrectas.forEach(function(q){
@@ -899,8 +965,8 @@ function loadNormas(){
     card("General",fila("Limite de entrega","10 Jun 2026 23:59")+fila("Precio","15 euros")+fila("Ganador","Max puntos"))+
     card("Pronosticos",fila("Resultado exacto","4 pts","3 pts resultado + 1 pt 1X2")+fila("Solo 1X2","1 pt")+fila("Fallo","0 pts")+'<div class="n-note">El 1X2 se genera automaticamente. No hay coherencia obligatoria.</div>')+
     card("Fases",'<div class="n-note">No importa el orden 1 o 2 dentro del grupo.</div>'+fila("Dieciseisavos (2/grupo + 8 mejores 3os)","3 pts")+fila("Octavos","5 pts")+fila("Cuartos","7 pts")+fila("Semifinal","9 pts")+fila("Finalista / 3er clasificado","11 pts")+fila("Campeon","16 pts"))+
-    card("Preguntas especiales",fila("Pichichi","10 pts base","+1 por cada gol del jugador. Penalties no cuentan. Segun web oficial UEFA. Si empate en Pichichi, 10 puntos a cada acertante.")+fila("1er gol de Espana","3 pts")+fila("1a amarilla de Espana","3 pts")+fila("1a roja del torneo","3 pts")+fila("1a seleccion falla penalty","3 pts")+fila("1er gol del Mundial","3 pts"))+
-    card("Preguntas extra",fila("1er jugador Espana desde banquillo","1 pt")+fila("1er jugador Mundial en amarilla","2 pts")+fila("Marcara gol Neymar en grupos","1 pt")+fila("Que partido acaba 0-0 primero","1 pt")+fila("Haiti, Curazao o ninguno marca primero","1 pt"))+
+    card("Preguntas especiales",fila("Pichichi","10 pts base","+1 por cada gol del jugador. Penalties no cuentan. Segun web oficial UEFA. Si empate en Pichichi, 10 puntos a cada acertante.")+fila("1er gol de Espa\u00f1a","3 pts")+fila("1a amarilla de Espa\u00f1a","3 pts")+fila("1a roja del torneo","3 pts")+fila("1a seleccion falla penalty","3 pts")+fila("1er gol del Mundial","3 pts"))+
+    card("Preguntas extra",fila("1er jugador Espa\u00f1a desde banquillo","1 pt")+fila("1er jugador Mundial en amarilla","2 pts")+fila("Marcara gol Neymar en grupos","1 pt")+fila("Que partido acaba 0-0 primero","1 pt")+fila("Haiti, Curazao o ninguno marca primero","1 pt"))+
     card("Premios",fila("1er clasificado","80%")+fila("2o clasificado","15%")+fila("3er clasificado","5%")+'<div class="n-note">Sobre el bote tras restar aportacion del organizador. 3+ empatados en 1er: reparten el 100%. 2 empatados en 1er: reparten el 95%, el siguiente recibe el 5%.</div>')+
     card("Plazos",fila("Partidos, Cruces y Preguntas","10 Jun 2026 23:59")+fila("Pronosticos de partidos","tambien se bloquean el dia del partido"))
   );
@@ -927,17 +993,13 @@ window.onload=function(){
 function calcularProgreso(apuestas, partidos, preguntas){
   var totalPartidos = partidos.filter(function(p){ return p.fase && p.fase.indexOf("GRUPO_")===0; }).length;
   var hechos = apuestas.partidos ? apuestas.partidos.filter(function(p){ return p.pronostico && p.fase && p.fase.indexOf("GRUPO_")===0; }).length : 0;
-
   var totalCruces = 64;
   var hechosCruces = apuestas.cruces ? Object.keys(apuestas.cruces).length : 0;
-
   var totalPreg = preguntas.length;
   var hechosPreg = apuestas.preguntas ? apuestas.preguntas.filter(function(q){ return q.respuesta; }).length : 0;
-
   var total = totalPartidos + totalCruces + totalPreg;
   var hechos2 = hechos + hechosCruces + hechosPreg;
   var pct = total > 0 ? Math.round((hechos2 / total) * 100) : 0;
-
   var chip = document.getElementById("progChip");
   var pctEl = document.getElementById("progPct");
   if(chip && pctEl){
