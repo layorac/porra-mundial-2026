@@ -284,9 +284,7 @@ var _franjaTab = "hoy";
 function renderFranjaFechas(franja){
   var pHoy=franja.partidosHoy||[];
   var pManana=franja.partidosManana||[];
-  var cruces=franja.cruces||[];
-  var hayCruces=cruces.length>0;
-  if(pHoy.length===0 && pManana.length===0 && !hayCruces) return "";
+  if(pHoy.length===0 && pManana.length===0) return "";
 
   var fln={"DIECISEISAVOS":"Dieciseisavos","OCTAVOS":"Octavos","CUARTOS":"Cuartos","SEMIFINAL":"Semifinales","TERCER_PUESTO":"3er y 4o puesto","FINAL":"Final","CAMPEON":"Campeon"};
 
@@ -319,19 +317,6 @@ function renderFranjaFechas(franja){
       });
     }
     h+="</div></div>";
-  }
-
-  if(cruces.length>0){
-    h+='<div class="card"><div class="card-title">Apuestas de la siguiente fase</div>';
-    cruces.forEach(function(r,idx){
-      h+='<div style="padding:10px 0;border-bottom:1px solid var(--bdr)'+(idx===cruces.length-1?";border-bottom:none":"")+'\">';
-      h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--gold)">'+(fln[r.ronda]||r.ronda)+"</div>";
-      r.opciones.forEach(function(o){
-        h+='<div class="a-row"><span class="a-lbl">'+esc(o.equipo)+'</span><span style="font-size:10px;color:var(--gold);text-align:right">'+o.usuarios.map(esc).join(", ")+"</span></div>";
-      });
-      h+="</div>";
-    });
-    h+="</div>";
   }
 
   return h;
@@ -866,16 +851,15 @@ function renderResultados(){
 
         // Aciertos en cruces para este partido (equipo ganador apostado)
         if(p.estado==="FINALIZADO" && ganador && ac.aciertosCrucesPorEquipo){
-          // Buscar la ronda correspondiente a este cruce
-          var ronda = _resCrucesTab;
-          // Normalizar ronda para buscar en aciertosCrucesPorEquipo
-          var rondaKey = ronda;
-          if(ronda === "TERCER_PUESTO") rondaKey = "FINALISTAS";
-          if(ronda === "FINAL")         rondaKey = "FINALISTAS";
+          var rondaKey = _resCrucesTab;
+          if(rondaKey === "TERCER_PUESTO") rondaKey = "FINALISTAS";
+          if(rondaKey === "FINAL")         rondaKey = "FINALISTAS";
           var equipoKey = ganador.toUpperCase();
           var acRonda = ac.aciertosCrucesPorEquipo[rondaKey];
-          if(acRonda && acRonda[equipoKey] && acRonda[equipoKey].length > 0){
-            h+='<div style="font-size:10px;color:var(--gold);padding:2px 0 6px 0">Aciertan ('+esc(ganador)+'): '+acRonda[equipoKey].map(esc).join(", ")+"</div>";
+          if(acRonda && acRonda[equipoKey] && acRonda[equipoKey].nombres && acRonda[equipoKey].nombres.length > 0){
+            var pts = acRonda[equipoKey].puntos || 0;
+            var ptsLabel = pts > 0 ? ' <span style="color:var(--green)">+'+pts+' pts</span>' : '';
+            h+='<div style="font-size:10px;color:var(--gold);padding:2px 0 6px 0">Aciertan '+esc(ganador)+ptsLabel+': '+acRonda[equipoKey].nombres.map(esc).join(", ")+"</div>";
           }
         }
       });
