@@ -284,61 +284,69 @@ var _franjaTab = "hoy";
 function renderFranjaFechas(franja){
   var pHoy=franja.partidosHoy||[];
   var pManana=franja.partidosManana||[];
-  var cruces=franja.cruces||[];
-  var hayCruces=cruces.length>0;
-  if(pHoy.length===0 && pManana.length===0 && !hayCruces) return "";
+  if(pHoy.length===0 && pManana.length===0) return "";
 
   var fln={"DIECISEISAVOS":"Dieciseisavos","OCTAVOS":"Octavos","CUARTOS":"Cuartos","SEMIFINAL":"Semifinales","TERCER_PUESTO":"3er y 4o puesto","FINAL":"Final","CAMPEON":"Campeon"};
 
   var h='<div class="fase-hdr">Hoy y mañana</div>';
+  h+='<div class="card" style="padding:0;overflow:hidden">';
+  h+='<div style="display:flex;border-bottom:1px solid var(--bdr)">';
+  h+='<button onclick="setFranjaTab(\'hoy\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="hoy"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="hoy"?"var(--gold)":"transparent")+'">Hoy ('+pHoy.length+')</button>';
+  h+='<button onclick="setFranjaTab(\'manana\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="manana"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="manana"?"var(--gold)":"transparent")+'">Mañana ('+pManana.length+')</button>';
+  h+="</div>";
+  h+='<div style="padding:16px">';
 
-  if(pHoy.length>0 || pManana.length>0){
-    h+='<div class="card" style="padding:0;overflow:hidden">';
-    h+='<div style="display:flex;border-bottom:1px solid var(--bdr)">';
-    h+='<button onclick="setFranjaTab(\'hoy\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="hoy"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="hoy"?"var(--gold)":"transparent")+'">Hoy ('+pHoy.length+')</button>';
-    h+='<button onclick="setFranjaTab(\'manana\')" style="flex:1;background:none;border:none;padding:12px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;color:'+(_franjaTab==="manana"?"var(--gold)":"var(--muted)")+';border-bottom:2px solid '+(_franjaTab==="manana"?"var(--gold)":"transparent")+'">Mañana ('+pManana.length+')</button>';
-    h+="</div>";
-    h+='<div style="padding:16px">';
-    var lista = _franjaTab === "hoy" ? pHoy : pManana;
-    if(lista.length===0){
-      h+='<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Sin partidos pendientes</p>';
-    }else{
-      lista.forEach(function(p,idx){
-        var esGrupo = p.fase && p.fase.indexOf("GRUPO_") === 0;
-        h+='<div style="padding:10px 0;border-bottom:1px solid var(--bdr)'+(idx===lista.length-1?";border-bottom:none":"")+'\">';
-        h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
-        var faseLbl = esGrupo ? p.fase.replace("GRUPO_","Grupo ") : (p.fase||"");
-        h+='<span style="font-size:12px;font-weight:600">'+esc(p.equipoA)+' vs '+esc(p.equipoB)+'</span>';
-        h+='<span style="font-size:9px;color:var(--muted)">'+esc(faseLbl)+"</span>";
-        h+="</div>";
-        if(esGrupo){
-          if(p.apuestas.length===0){
-            h+='<div class="a-empty">Sin apuestas todavia</div>';
-          }else{
-            p.apuestas.forEach(function(a){
-              h+='<div class="a-row"><span class="a-lbl">'+a.golesA+" - "+a.golesB+'</span><span style="font-size:10px;color:var(--gold);text-align:right">'+a.usuarios.map(esc).join(", ")+"</span></div>";
-            });
-          }
+  var lista = _franjaTab === "hoy" ? pHoy : pManana;
+  if(lista.length===0){
+    h+='<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Sin partidos</p>';
+  }else{
+    lista.forEach(function(p,idx){
+      var esGrupo = p.esGrupo || (p.fase && p.fase.indexOf("GRUPO_")===0);
+      var faseLbl = esGrupo ? p.fase.replace("GRUPO_","Grupo ") : (fln[p.fase]||p.fase||"");
+      h+='<div style="padding:12px 0;border-bottom:1px solid var(--bdr)'+(idx===lista.length-1?";border-bottom:none":"")+'">';
+
+      // Cabecera: fase a la izq, hora/fecha a la dcha
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+      h+='<span style="font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted)">'+esc(faseLbl)+'</span>';
+      h+='<span style="font-size:10px;color:var(--muted)">'+esc(p.fecha||"")+'</span>';
+      h+="</div>";
+
+      if(esGrupo){
+        // Partido de grupo: mostrar equipos y apuestas de marcador
+        h+='<div style="font-size:13px;font-weight:600;margin-bottom:8px">'+esc(p.equipoA)+' <span style="color:var(--muted)">vs</span> '+esc(p.equipoB)+'</div>';
+        if(p.apuestas && p.apuestas.length>0){
+          p.apuestas.forEach(function(a){
+            h+='<div class="a-row"><span class="a-lbl" style="font-family:'Space Grotesk',sans-serif;font-weight:700">'+a.golesA+' — '+a.golesB+'</span><span style="font-size:10px;color:var(--gold)">'+a.usuarios.map(esc).join(", ")+"</span></div>";
+          });
+        }else{
+          h+='<div class="a-empty">Sin apuestas todavia</div>';
+        }
+      }else{
+        // Partido eliminatorio: mostrar cada equipo con sus apostantes de cruce
+        var cA=p.apuestasCruceA||[], cB=p.apuestasCruceB||[];
+        // Equipo A
+        h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid var(--bdr)">';
+        h+='<span style="font-size:12px;font-weight:600;min-width:90px;flex-shrink:0">'+esc(p.equipoA||"?")+'</span>';
+        if(cA.length>0){
+          h+='<span style="font-size:10px;color:var(--gold);line-height:1.5">'+cA.map(esc).join(", ")+'</span>';
+        }else{
+          h+='<span class="a-empty">Nadie</span>';
         }
         h+="</div>";
-      });
-    }
-    h+="</div></div>";
-  }
-
-  if(cruces.length>0){
-    h+='<div class="card"><div class="card-title">Apuestas de la siguiente fase</div>';
-    cruces.forEach(function(r,idx){
-      h+='<div style="padding:10px 0;border-bottom:1px solid var(--bdr)'+(idx===cruces.length-1?";border-bottom:none":"")+'\">';
-      h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--gold)">'+(fln[r.ronda]||r.ronda)+"</div>";
-      r.opciones.forEach(function(o){
-        h+='<div class="a-row"><span class="a-lbl">'+esc(o.equipo)+'</span><span style="font-size:10px;color:var(--gold);text-align:right">'+o.usuarios.map(esc).join(", ")+"</span></div>";
-      });
+        // Equipo B
+        h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0">';
+        h+='<span style="font-size:12px;font-weight:600;min-width:90px;flex-shrink:0">'+esc(p.equipoB||"?")+'</span>';
+        if(cB.length>0){
+          h+='<span style="font-size:10px;color:var(--gold);line-height:1.5">'+cB.map(esc).join(", ")+'</span>';
+        }else{
+          h+='<span class="a-empty">Nadie</span>';
+        }
+        h+="</div>";
+      }
       h+="</div>";
     });
-    h+="</div>";
   }
-
+  h+="</div></div>";
   return h;
 }
 
