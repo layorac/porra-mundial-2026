@@ -325,23 +325,31 @@ function renderFranjaFechas(franja){
         // Partido eliminatorio: mostrar cada equipo con sus apostantes de cruce
         var cA=p.apuestasCruceA||[], cB=p.apuestasCruceB||[];
         // Equipo A
-        h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid var(--bdr)">';
+        h+='<div style="padding:5px 0;border-bottom:1px solid var(--bdr)">';
+        h+='<div style="display:flex;align-items:flex-start;gap:10px">';
         h+='<span style="font-size:12px;font-weight:600;min-width:90px;flex-shrink:0">'+esc(p.equipoA||"?")+'</span>';
         if(cA.length>0){
+          h+='<div style="display:flex;flex-direction:column;gap:1px">';
+          h+='<span style="font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted)">Pasa próxima ronda</span>';
           h+='<span style="font-size:10px;color:var(--gold);line-height:1.5">'+cA.map(esc).join(", ")+'</span>';
+          h+='</div>';
         }else{
           h+='<span class="a-empty">Nadie</span>';
         }
-        h+="</div>";
+        h+="</div></div>";
         // Equipo B
-        h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0">';
+        h+='<div style="padding:5px 0">';
+        h+='<div style="display:flex;align-items:flex-start;gap:10px">';
         h+='<span style="font-size:12px;font-weight:600;min-width:90px;flex-shrink:0">'+esc(p.equipoB||"?")+'</span>';
         if(cB.length>0){
+          h+='<div style="display:flex;flex-direction:column;gap:1px">';
+          h+='<span style="font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted)">Pasa próxima ronda</span>';
           h+='<span style="font-size:10px;color:var(--gold);line-height:1.5">'+cB.map(esc).join(", ")+'</span>';
+          h+='</div>';
         }else{
           h+='<span class="a-empty">Nadie</span>';
         }
-        h+="</div>";
+        h+="</div></div>";
       }
       h+="</div>";
     });
