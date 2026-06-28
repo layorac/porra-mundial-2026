@@ -362,7 +362,9 @@ function renderPendientes(pend){
   var partidos=pend.partidos||[];
   var cruces=pend.cruces||[];
   var preguntas=pend.preguntas||[];
-  if(partidos.length===0 && cruces.length===0 && preguntas.length===0) return "";
+  var totalPendCrucesCheck=cruces.reduce(function(sum,r){return sum+r.opciones.length;},0);
+  if(partidos.length===0 && totalPendCrucesCheck===0 && preguntas.length===0) return "";
+  if(_pendTab==="cruces" && totalPendCrucesCheck===0) _pendTab="partidos";
 
   if(!_pendCrucesRonda && cruces.length>0) _pendCrucesRonda = cruces[0].ronda;
   // Si la ronda activa ya no existe (fue ocultada por estar toda clasificada), resetear
@@ -375,8 +377,9 @@ function renderPendientes(pend){
   var h='<div class="fase-hdr">Apuestas pendientes</div>';
   h+='<div class="card" style="padding:0;overflow:hidden">';
   h+='<div style="display:flex;border-bottom:1px solid var(--bdr)">';
+  var totalPendCruces = cruces.reduce(function(sum,r){ return sum + r.opciones.length; }, 0);
   h+=pendTabBtn("partidos","Partidos ("+partidos.length+")");
-  h+=pendTabBtn("cruces","Cruces ("+cruces.length+")");
+  h+=pendTabBtn("cruces","Cruces ("+totalPendCruces+")");
   h+=pendTabBtn("preguntas","Preguntas ("+preguntas.length+")");
   h+="</div>";
   h+='<div style="padding:16px">';
@@ -707,7 +710,7 @@ function cargarApuestas(id){
 
 // ── RESULTADOS
 var _resTab = "partidos";
-var _resData = null, _resAc = null, _resPich = null;
+var _resData = null, _resAc = null, _resPich = null, _resClasif = null;
 var _resCrucesTab = null;  // pestaña interna de cruces en Resultados
 
 function loadResultados(){
@@ -834,10 +837,18 @@ function renderResultados(){
       partidosPorCruce[cr].push(p);
     });
 
-    var fasesConPartidos = fasesOrden.filter(function(f){ return partidosPorCruce[f] && partidosPorCruce[f].length > 0; });
+    var fasesConPartidos = fasesOrden.filter(function(f){
+      // Incluir si tiene partidos eliminatorios O si tiene equipos clasificados con aciertos
+      if(partidosPorCruce[f] && partidosPorCruce[f].length > 0) return true;
+      // Mapear la fase al grupo de aciertosCrucesPorEquipo
+      var rondaKeyCheck = f;
+      if(f === "TERCER_PUESTO") rondaKeyCheck = "FINALISTAS";
+      if(f === "FINAL")         rondaKeyCheck = "FINALISTAS";
+      return ac.aciertosCrucesPorEquipo && ac.aciertosCrucesPorEquipo[rondaKeyCheck] && Object.keys(ac.aciertosCrucesPorEquipo[rondaKeyCheck]).length > 0;
+    });
 
     if(fasesConPartidos.length === 0){
-      h+='<div class="card"><p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Aun no hay cruces disponibles</p></div>';
+      h+='<div class="card"><p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Aun no hay datos de cruces disponibles</p></div>';
     } else {
       // Si no hay pestaña activa o la activa ya no existe, usar la primera
       if(!_resCrucesTab || fasesConPartidos.indexOf(_resCrucesTab) === -1){
@@ -853,46 +864,80 @@ function renderResultados(){
       });
       h+="</div></div>";
 
+      // Normalizar ronda para buscar en aciertosCrucesPorEquipo
+      var rondaKeyAc = _resCrucesTab;
+      if(_resCrucesTab === "TERCER_PUESTO") rondaKeyAc = "FINALISTAS";
+      if(_resCrucesTab === "FINAL")         rondaKeyAc = "FINALISTAS";
+
+      // Equipos ya clasificados en esta fase con sus acertantes
+      var acRondaClasif = (ac.aciertosCrucesPorEquipo && ac.aciertosCrucesPorEquipo[rondaKeyAc]) || {};
+      var equiposClasif = Object.keys(acRondaClasif);
+
       // Partidos de la fase activa
       var pfActivos = partidosPorCruce[_resCrucesTab] || [];
-      h+='<div class="card">';
-      pfActivos.forEach(function(p){
-        var eA=(!p.equipoA||p.equipoA==="POR_DETERMINAR_A")?"?":esc(p.equipoA);
-        var eB=(!p.equipoB||p.equipoB==="POR_DETERMINAR_B")?"?":esc(p.equipoB);
-        var ganador = ganadorPartido(p);
-        h+='<div class="m-row">';
-        // Equipo A — dimmed si perdió
-        var dimA = p.estado==="FINALIZADO" && ganador && ganador !== p.equipoA;
-        var dimB = p.estado==="FINALIZADO" && ganador && ganador !== p.equipoB;
-        h+='<span class="m-team'+(dimA?" dim":"")+'">'+eA;
-        if(ganador && ganador === p.equipoA) h+=' <span class="winner-badge">✓</span>';
-        h+="</span>";
-        if(p.estado==="FINALIZADO"){
-          var gA=Number(p.resultadoA),gB=Number(p.resultadoB);
-          h+='<span class="m-score"><span style="color:'+(gA>gB?"var(--green)":"var(--text)")+'">'+gA+'</span><span style="color:var(--muted)"> - </span><span style="color:'+(gB>gA?"var(--green)":"var(--text)")+'">'+gB+"</span></span>";
-        }else{
-          h+='<div class="m-vs">vs<br><span style="font-size:9px">'+(p.fecha||"Por jugar")+"</span></div>";
-        }
-        h+='<span class="m-team r'+(dimB?" dim":"")+'">'+eB;
-        if(ganador && ganador === p.equipoB) h+=' <span class="winner-badge">✓</span>';
-        h+="</span></div>";
 
-        // Aciertos en cruces para este partido (equipo ganador apostado)
-        if(p.estado==="FINALIZADO" && ganador && ac.aciertosCrucesPorEquipo){
-          // Buscar la ronda correspondiente a este cruce
-          var ronda = _resCrucesTab;
-          // Normalizar ronda para buscar en aciertosCrucesPorEquipo
-          var rondaKey = ronda;
-          if(ronda === "TERCER_PUESTO") rondaKey = "FINALISTAS";
-          if(ronda === "FINAL")         rondaKey = "FINALISTAS";
-          var equipoKey = ganador.toUpperCase();
-          var acRonda = ac.aciertosCrucesPorEquipo[rondaKey];
-          if(acRonda && acRonda[equipoKey] && acRonda[equipoKey].length > 0){
-            h+='<div style="font-size:10px;color:var(--gold);padding:2px 0 6px 0">Aciertan ('+esc(ganador)+'): '+acRonda[equipoKey].map(esc).join(", ")+"</div>";
+      // Sección de partidos (solo si hay alguno)
+      if(pfActivos.length > 0){
+        h+='<div class="card">';
+        pfActivos.forEach(function(p){
+          var eA=(!p.equipoA||p.equipoA==="POR_DETERMINAR_A")?"?":esc(p.equipoA);
+          var eB=(!p.equipoB||p.equipoB==="POR_DETERMINAR_B")?"?":esc(p.equipoB);
+          var ganador = ganadorPartido(p);
+          h+='<div class="m-row">';
+          var dimA = p.estado==="FINALIZADO" && ganador && ganador !== p.equipoA;
+          var dimB = p.estado==="FINALIZADO" && ganador && ganador !== p.equipoB;
+          h+='<span class="m-team'+(dimA?" dim":"")+'">'+eA;
+          if(ganador && ganador === p.equipoA) h+=' <span class="winner-badge">✓</span>';
+          h+="</span>";
+          if(p.estado==="FINALIZADO"){
+            var gA=Number(p.resultadoA),gB=Number(p.resultadoB);
+            h+='<span class="m-score"><span style="color:'+(gA>gB?"var(--green)":"var(--text)")+'">'+gA+'</span><span style="color:var(--muted)"> - </span><span style="color:'+(gB>gA?"var(--green)":"var(--text)")+'">'+gB+"</span></span>";
+          }else{
+            h+='<div class="m-vs">vs<br><span style="font-size:9px">'+(p.fecha||"Por jugar")+"</span></div>";
           }
+          h+='<span class="m-team r'+(dimB?" dim":"")+'">'+eB;
+          if(ganador && ganador === p.equipoB) h+=' <span class="winner-badge">✓</span>';
+          h+="</span></div>";
+
+          // Aciertos para el ganador de este partido
+          if(p.estado==="FINALIZADO" && ganador){
+            var equipoKey = ganador.toUpperCase();
+            if(acRondaClasif[equipoKey] && acRondaClasif[equipoKey].length > 0){
+              h+='<div style="font-size:10px;color:var(--gold);padding:2px 0 6px 0">Aciertan ('+esc(ganador)+'): '+acRondaClasif[equipoKey].map(esc).join(", ")+"</div>";
+            }
+          }
+        });
+        h+="</div>";
+      }
+
+      // Sección de clasificados con aciertos (independiente de partidos)
+      if(equiposClasif.length > 0){
+        // Solo mostrar los equipos clasificados que NO hayan aparecido ya como ganador de un partido
+        var ganadoresYaMostrados = {};
+        pfActivos.forEach(function(p){
+          var g = ganadorPartido(p);
+          if(g) ganadoresYaMostrados[g.toUpperCase()] = true;
+        });
+        var equiposExtra = equiposClasif.filter(function(eq){ return !ganadoresYaMostrados[eq]; });
+
+        if(equiposExtra.length > 0){
+          h+='<div class="card"><div class="card-title" style="margin-bottom:10px">Clasificados — aciertos</div>';
+          equiposExtra.forEach(function(eq){
+            var usuarios = acRondaClasif[eq] || [];
+            h+='<div class="a-row">';
+            h+='<span class="a-lbl" style="font-weight:600;color:var(--text)">'+esc(eq.charAt(0)+eq.slice(1).toLowerCase())+'</span>';
+            if(usuarios.length > 0){
+              h+='<span style="font-size:10px;color:var(--gold);text-align:right">'+usuarios.map(esc).join(", ")+"</span>";
+            }else{
+              h+='<span class="a-empty">Nadie</span>';
+            }
+            h+="</div>";
+          });
+          h+="</div>";
         }
-      });
-      h+="</div>";
+      } else if(pfActivos.length === 0){
+        h+='<div class="card"><p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0">Sin datos disponibles para esta fase</p></div>';
+      }
     }
   }
 
