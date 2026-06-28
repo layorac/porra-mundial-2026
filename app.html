@@ -316,7 +316,7 @@ function renderFranjaFechas(franja){
         h+='<div style="font-size:13px;font-weight:600;margin-bottom:8px">'+esc(p.equipoA)+' <span style="color:var(--muted)">vs</span> '+esc(p.equipoB)+'</div>';
         if(p.apuestas && p.apuestas.length>0){
           p.apuestas.forEach(function(a){
-            h+='<div class="a-row"><span class="a-lbl" style="font-family:'Space Grotesk',sans-serif;font-weight:700">'+a.golesA+' — '+a.golesB+'</span><span style="font-size:10px;color:var(--gold)">'+a.usuarios.map(esc).join(", ")+"</span></div>";
+            h+='<div class="a-row"><span class="a-lbl" style="font-family:\'Space Grotesk\',sans-serif;font-weight:700">'+a.golesA+' \u2014 '+a.golesB+'</span><span style="font-size:10px;color:var(--gold)">'+a.usuarios.map(esc).join(", ")+"</span></div>";
           });
         }else{
           h+='<div class="a-empty">Sin apuestas todavia</div>';
