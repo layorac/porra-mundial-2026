@@ -907,17 +907,18 @@ function renderResultados(){
           if(ganador && ganador === p.equipoB) h+=' <span class="winner-badge">✓</span>';
           h+="</span></div>";
 
-          // Aciertos para ambos equipos del partido (solo si está finalizado)
-          if(p.estado==="FINALIZADO"){
-            var eqs=[];
-            if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A")eqs.push(p.equipoA);
-            if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B")eqs.push(p.equipoB);
+          // Aciertos: mostrar en cuanto el equipo tiene nombre real (aunque el partido no haya acabado)
+          var eqs=[];
+          if(p.equipoA&&p.equipoA!=="POR_DETERMINAR_A")eqs.push(p.equipoA);
+          if(p.equipoB&&p.equipoB!=="POR_DETERMINAR_B")eqs.push(p.equipoB);
+          if(eqs.length>0){
             eqs.forEach(function(eq,ei){
               var eqKey=eq.toUpperCase();
               var usuarios=acRondaClasif[eqKey]||[];
-              var esGan=ganador===eq;
+              var esGan=p.estado==="FINALIZADO"&&ganador===eq;
+              var esElim=p.estado==="FINALIZADO"&&ganador&&ganador!==eq;
               h+='<div style="display:flex;align-items:baseline;gap:5px;padding:1px 0'+(ei===eqs.length-1?";margin-bottom:6px":"")+'">';
-              h+='<span style="font-size:10px;font-weight:700;white-space:nowrap;color:'+(esGan?"var(--green)":"var(--muted)")+'">Aciertan ('+esc(eq)+'):</span>';
+              h+='<span style="font-size:10px;font-weight:700;white-space:nowrap;color:'+(esGan?"var(--green)":esElim?"var(--muted)":"var(--sub)")+'">Aciertan ('+esc(eq)+'):</span>';
               h+=(usuarios.length>0)?'<span style="font-size:10px;color:var(--gold)">'+usuarios.map(esc).join(", ")+"</span>":'<span style="font-size:10px;color:var(--muted)">Nadie</span>';
               h+="</div>";
             });
